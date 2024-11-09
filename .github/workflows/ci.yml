@@ -22,27 +22,7 @@ jobs:
     - run: ./javy-x86_64-linux-v1.2.0 compile out.js -o examples/plugin.wasm
     - run: sqlc -f sqlc.dev.yaml diff
       working-directory: examples
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Upload plugin.wasm to GitHub Releases
-      id: upload-release-asset
-      uses: actions/upload-release-asset@v1
+    - name: release
+      uses: softprops/action-gh-release@v2
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: examples/plugin.wasm
-        asset_name: plugin.wasm
-        asset_content_type: application/wasm
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: "v0.0.2"
-        release_name: "Release v0.0.2"
-        draft: false
-        prerelease: false
+        files: examples/plugin.wasm
