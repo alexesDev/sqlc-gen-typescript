@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, STDIO } from "javy/fs";
 import {
   EmitHint,
   FunctionDeclaration,
+  PropertyAssignment,
   NewLineKind,
   TypeNode,
   ScriptKind,
@@ -16,6 +17,8 @@ import {
   createPrinter,
   createSourceFile,
   factory,
+  Expression,
+  ParameterDeclaration,
 } from "typescript";
 
 import {
@@ -122,6 +125,7 @@ function codegen(input: GenerateRequest): GenerateResponse {
 
   for (const [filename, queries] of querymap.entries()) {
     const nodes = driver.preamble(queries);
+    const queryNames: [string, string | undefined][] = [];
 
     for (const query of queries) {
       const colmap = new Map<string, number>();
@@ -152,6 +156,9 @@ ${query.text}`
       if (query.params.length > 0) {
         argIface = `${query.name}Args`;
         nodes.push(argsDecl(argIface, driver, query.params));
+        queryNames.push([lowerName, argIface]);
+      } else {
+        queryNames.push([lowerName, undefined]);
       }
       if (query.columns.length > 0) {
         returnIface = `${query.name}Row`;
@@ -198,20 +205,95 @@ ${query.text}`
           break;
         }
       }
-      if (nodes) {
-        files.push(
-          new File({
-            name: `${filename.replace(".", "_")}.ts`,
-            contents: new TextEncoder().encode(printNode(nodes)),
-          })
-        );
-      }
+    }
+
+    if (queryNames.length > 0) {
+      nodes.push(createMakeQueriesFn(queryNames));
+    }
+
+    if (nodes) {
+      files.push(
+        new File({
+          name: `${filename.replace(".", "_")}.ts`,
+          contents: new TextEncoder().encode(printNode(nodes)),
+        })
+      );
     }
   }
 
   return new GenerateResponse({
     files: files,
   });
+}
+
+function createMakeQueriesFn(queryNames: [string, string | undefined][]) {
+  const queryFunctions = queryNames.map(([name, argsIface]) => {
+    const args: ParameterDeclaration[] = [];
+    const callArgs: Expression[] = [factory.createIdentifier("db")];
+
+    if (argsIface) {
+      args.push(factory.createParameterDeclaration(
+        undefined,
+        undefined,
+        "args",
+        undefined,
+        factory.createTypeReferenceNode(argsIface)
+      ));
+
+      callArgs.push(factory.createIdentifier("args"));
+    }
+
+    return factory.createPropertyAssignment(
+      factory.createIdentifier(name),
+      factory.createArrowFunction(
+        undefined,
+        undefined,
+        args,
+        undefined,
+        factory.createToken(SyntaxKind.EqualsGreaterThanToken),
+        factory.createCallExpression(
+          factory.createIdentifier(name),
+          undefined,
+          callArgs,
+        )
+      )
+    );
+  });
+
+  return factory.createFunctionDeclaration(
+    [factory.createModifier(SyntaxKind.ExportKeyword), factory.createModifier(SyntaxKind.DefaultKeyword)],
+    undefined,
+    factory.createIdentifier("makeQueries"),
+    undefined,
+    [
+      factory.createParameterDeclaration(
+        undefined,
+        undefined,
+        "db",
+        undefined,
+        factory.createIndexedAccessTypeNode(
+          factory.createTypeReferenceNode(
+            factory.createIdentifier("Parameters"),
+            [
+              factory.createTypeQueryNode(
+                factory.createIdentifier(queryNames[0][0])
+              ),
+            ]
+          ),
+          factory.createLiteralTypeNode(factory.createNumericLiteral(0)),
+        ),
+      ),
+    ],
+    undefined,
+    factory.createBlock(
+      [
+        factory.createReturnStatement(
+          factory.createObjectLiteralExpression(queryFunctions, true)
+        ),
+      ],
+      true
+    )
+  );
 }
 
 // Read input from stdin
