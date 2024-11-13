@@ -209,3 +209,14 @@ export async function test(client: Client): Promise<TestRow | null> {
     };
 }
 
+export default function makeQueries(db: Parameters<typeof getAuthor>[0]) {
+    return {
+        getAuthor: (args: GetAuthorArgs) => getAuthor(db, args),
+        listAuthors: () => listAuthors(db),
+        createAuthor: (args: CreateAuthorArgs) => createAuthor(db, args),
+        createAuthorReturnId: (args: CreateAuthorReturnIdArgs) => createAuthorReturnId(db, args),
+        deleteAuthor: (args: DeleteAuthorArgs) => deleteAuthor(db, args),
+        test: () => test(db)
+    };
+}
+

@@ -114,3 +114,12 @@ export async function deleteAuthor(client: Client, args: DeleteAuthorArgs): Prom
     });
 }
 
+export default function makeQueries(db: Parameters<typeof getAuthor>[0]) {
+    return {
+        getAuthor: (args: GetAuthorArgs) => getAuthor(db, args),
+        listAuthors: () => listAuthors(db),
+        createAuthor: (args: CreateAuthorArgs) => createAuthor(db, args),
+        deleteAuthor: (args: DeleteAuthorArgs) => deleteAuthor(db, args)
+    };
+}
+

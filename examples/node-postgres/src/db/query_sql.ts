@@ -97,3 +97,12 @@ export async function deleteAuthor(sql: Sql, args: DeleteAuthorArgs): Promise<vo
     await sql.unsafe(deleteAuthorQuery, [args.id]);
 }
 
+export default function makeQueries(db: Parameters<typeof getAuthor>[0]) {
+    return {
+        getAuthor: (args: GetAuthorArgs) => getAuthor(db, args),
+        listAuthors: () => listAuthors(db),
+        createAuthor: (args: CreateAuthorArgs) => createAuthor(db, args),
+        deleteAuthor: (args: DeleteAuthorArgs) => deleteAuthor(db, args)
+    };
+}
+
