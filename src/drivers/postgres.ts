@@ -129,7 +129,7 @@ export class Driver {
         break;
       }
       case "int8": {
-        typ = factory.createKeywordTypeNode(SyntaxKind.BigIntKeyword);
+        // string
         break;
       }
       case "interval": {
