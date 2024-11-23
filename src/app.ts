@@ -12,6 +12,7 @@ import {
   ScriptKind,
   ScriptTarget,
   SyntaxKind,
+  addSyntheticLeadingComment,
   Node,
   NodeFlags,
   createPrinter,
@@ -28,6 +29,7 @@ import {
   Column,
   File,
   Query,
+  Schema,
 } from "./gen/plugin/codegen_pb";
 
 import { argName, colName } from "./drivers/utlis";
@@ -123,6 +125,8 @@ function codegen(input: GenerateRequest): GenerateResponse {
     qs?.push(query);
   }
 
+  const createdEnums: Set<string> = new Set();
+
   for (const [filename, queries] of querymap.entries()) {
     const nodes = driver.preamble(queries);
     const queryNames: [string, string | undefined][] = [];
@@ -155,14 +159,14 @@ ${query.text}`
       let returnIface = undefined;
       if (query.params.length > 0) {
         argIface = `${query.name}Args`;
-        nodes.push(argsDecl(argIface, driver, query.params));
+        nodes.push(...argsDecl(argIface, driver, query.params, input.catalog?.schemas || [], createdEnums));
         queryNames.push([lowerName, argIface]);
       } else {
         queryNames.push([lowerName, undefined]);
       }
       if (query.columns.length > 0) {
         returnIface = `${query.name}Row`;
-        nodes.push(rowDecl(returnIface, driver, query.columns));
+        nodes.push(...rowDecl(returnIface, driver, query.columns, input.catalog?.schemas || [], createdEnums));
       }
 
       switch (query.cmd) {
@@ -322,43 +326,131 @@ function queryDecl(name: string, sql: string) {
 function argsDecl(
   name: string,
   driver: Driver,
-  params: Parameter[]
+  params: Parameter[],
+  schemas: Schema[],
+  createdEnums: Set<string>,
 ) {
-  return factory.createInterfaceDeclaration(
+  const res: Node[] = [];
+
+  res.push(factory.createInterfaceDeclaration(
     [factory.createToken(SyntaxKind.ExportKeyword)],
     factory.createIdentifier(name),
     undefined,
     undefined,
-    params.map((param, i) =>
-      factory.createPropertySignature(
+    params.map((param, i) => {
+      const [columnType, enumDecl] = detectEnumColumn(driver, param.column, schemas, createdEnums);
+      if (enumDecl) {
+        res.push(enumDecl);
+      }
+
+      return factory.createPropertySignature(
         undefined,
         factory.createIdentifier(argName(i, param.column)),
         undefined,
         driver.columnType(param.column)
-      )
-    )
-  );
+      );
+    })
+  ));
+
+  return res;
 }
+
+function titleCase(str: string) {
+  return str[0].toUpperCase() + str.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+function detectEnumColumn(
+  driver: Driver,
+  column: Column | undefined,
+  schemas: Schema[],
+  createdEnums: Set<string>,
+): [TypeNode, Node | undefined] {
+  let columnType = driver.columnType(column);
+
+  for (const schema of schemas) {
+    if (schema.name !== (column?.type?.schema || 'public')) {
+      continue;
+    }
+
+    for (const e of schema.enums) {
+      if (e.name !== column?.type?.name) {
+        continue;
+      }
+
+      const typeName = `${titleCase(schema.name)}${titleCase(e.name)}`;
+
+      let union: Node | undefined = undefined;
+
+      if (!createdEnums.has(typeName)) {
+        const unionTypeNode = factory.createUnionTypeNode(
+          e.vals.map((status) =>
+            factory.createLiteralTypeNode(factory.createStringLiteral(status))
+          )
+        );
+
+        union = factory.createTypeAliasDeclaration(
+          [factory.createModifier(SyntaxKind.ExportKeyword)],
+          typeName,
+          undefined,
+          unionTypeNode,
+        );
+
+        createdEnums.add(typeName);
+      }
+
+      if (column?.notNull) {
+        return [
+          factory.createTypeReferenceNode(typeName, undefined),
+          union,
+        ];
+      }
+
+      return [
+        factory.createUnionTypeNode([
+          factory.createTypeReferenceNode(typeName, undefined),
+          factory.createLiteralTypeNode(factory.createNull()),
+        ]),
+        union,
+      ];
+    }
+  }
+
+  return [columnType, undefined];
+};
 
 function rowDecl(
   name: string,
   driver: Driver,
-  columns: Column[]
+  columns: Column[],
+  schemas: Schema[],
+  createdEnums: Set<string>,
 ) {
-  return factory.createInterfaceDeclaration(
-    [factory.createToken(SyntaxKind.ExportKeyword)],
-    factory.createIdentifier(name),
-    undefined,
-    undefined,
-    columns.map((column, i) =>
-      factory.createPropertySignature(
-        undefined,
-        factory.createIdentifier(colName(i, column)),
-        undefined,
-        driver.columnType(column)
-      )
+  const res: Node[] = [];
+
+  res.push(
+    factory.createInterfaceDeclaration(
+      [factory.createToken(SyntaxKind.ExportKeyword)],
+      factory.createIdentifier(name),
+      undefined,
+      undefined,
+      columns.map((column, i) => {
+        const [columnType, enumDecl] = detectEnumColumn(driver, column, schemas, createdEnums);
+
+        if (enumDecl) {
+          res.push(enumDecl);
+        }
+
+        return factory.createPropertySignature(
+          undefined,
+          factory.createIdentifier(colName(i, column)),
+          undefined,
+          columnType,
+        );
+      })
     )
   );
+
+  return res;
 }
 
 function printNode(nodes: Node[]): string {

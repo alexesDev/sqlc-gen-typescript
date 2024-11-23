@@ -8,9 +8,9 @@ ORDER BY name;
 
 -- name: CreateAuthor :one
 INSERT INTO authors (
-  name, bio
+  name, bio, status, required_status
 ) VALUES (
-  $1, $2
+  $1, $2, $3, $4
 )
 RETURNING *;
 

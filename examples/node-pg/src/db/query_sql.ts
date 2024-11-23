@@ -7,16 +7,20 @@ interface Client {
 }
 
 export const getAuthorQuery = `-- name: GetAuthor :one
-SELECT id, name, bio FROM authors
+SELECT id, name, status, required_status, bio FROM authors
 WHERE id = $1 LIMIT 1`;
 
 export interface GetAuthorArgs {
     id: string;
 }
 
+export type PublicAuthorStatus = "draft" | "published" | "deleted";
+
 export interface GetAuthorRow {
     id: string;
     name: string;
+    status: PublicAuthorStatus | null;
+    requiredStatus: PublicAuthorStatus;
     bio: string | null;
 }
 
@@ -33,17 +37,21 @@ export async function getAuthor(client: Client, args: GetAuthorArgs): Promise<Ge
     return {
         id: row[0],
         name: row[1],
-        bio: row[2]
+        status: row[2],
+        requiredStatus: row[3],
+        bio: row[4]
     };
 }
 
 export const listAuthorsQuery = `-- name: ListAuthors :many
-SELECT id, name, bio FROM authors
+SELECT id, name, status, required_status, bio FROM authors
 ORDER BY name`;
 
 export interface ListAuthorsRow {
     id: string;
     name: string;
+    status: PublicAuthorStatus | null;
+    requiredStatus: PublicAuthorStatus;
     bio: string | null;
 }
 
@@ -57,34 +65,40 @@ export async function listAuthors(client: Client): Promise<ListAuthorsRow[]> {
         return {
             id: row[0],
             name: row[1],
-            bio: row[2]
+            status: row[2],
+            requiredStatus: row[3],
+            bio: row[4]
         };
     });
 }
 
 export const createAuthorQuery = `-- name: CreateAuthor :one
 INSERT INTO authors (
-  name, bio
+  name, bio, status, required_status
 ) VALUES (
-  $1, $2
+  $1, $2, $3, $4
 )
-RETURNING id, name, bio`;
+RETURNING id, name, status, required_status, bio`;
 
 export interface CreateAuthorArgs {
     name: string;
     bio: string | null;
+    status: string | null;
+    requiredStatus: string;
 }
 
 export interface CreateAuthorRow {
     id: string;
     name: string;
+    status: PublicAuthorStatus | null;
+    requiredStatus: PublicAuthorStatus;
     bio: string | null;
 }
 
 export async function createAuthor(client: Client, args: CreateAuthorArgs): Promise<CreateAuthorRow | null> {
     const result = await client.query({
         text: createAuthorQuery,
-        values: [args.name, args.bio],
+        values: [args.name, args.bio, args.status, args.requiredStatus],
         rowMode: "array"
     });
     if (result.rows.length !== 1) {
@@ -94,7 +108,9 @@ export async function createAuthor(client: Client, args: CreateAuthorArgs): Prom
     return {
         id: row[0],
         name: row[1],
-        bio: row[2]
+        status: row[2],
+        requiredStatus: row[3],
+        bio: row[4]
     };
 }
 
